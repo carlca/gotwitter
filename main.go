@@ -8,6 +8,7 @@ import (
 	"path"
 
 	"github.com/ChimeraCoder/anaconda"
+	"github.com/pkg/errors"
 )
 
 // Credentials struct is read from ~/gotwitter/config.json config file
@@ -24,21 +25,15 @@ func (c *Credentials) String() string {
 }
 
 func main() {
-	// get current user
-	usr, err := user.Current()
-	if err != nil {
-		reportError(err)
-	}
-	// get config file location
-	credFile := path.Join(usr.HomeDir, ".gotwitter/config.json")
-	file, err := os.Open(credFile)
-	if err != nil {
-		reportError(err)
-	}
 
+	usr, err := getCurrentUser()
+	configPath := path.Join(usr.HomeDir, ".gotwitter/config.json")
+	file, err := openConfigFile(configPath)
 	creds, err := readConfig(file)
-
 	fmt.Println(creds)
+	if err != nil {
+		fmt.Printf("%+v", err)
+	}
 
 	api := getTwitterAPI(creds)
 
@@ -49,10 +44,29 @@ func main() {
 	}
 }
 
+func getCurrentUser() (*user.User, error) {
+	usr, err := user.Current()
+	if err != nil {
+		errors.Wrap(err, "error retriving user.Current()")
+	}
+	return usr, err
+}
+
+func openConfigFile(configPath string) (*os.File, error) {
+	file, err := os.Open(configPath)
+	if err != nil {
+		errors.Wrap(err, "error reading config path")
+	}
+	return file, err
+}
+
 func readConfig(file *os.File) (*Credentials, error) {
 	decoder := json.NewDecoder(file)
 	creds := &Credentials{}
 	err := decoder.Decode(&creds)
+	if err != nil {
+		errors.Wrap(err, "error in decoder.Decode(&creds)")
+	}
 	return creds, err
 }
 
