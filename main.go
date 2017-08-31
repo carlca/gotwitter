@@ -19,114 +19,96 @@ type Credentials struct {
 	AccessSecret   string `json:"accesssecret"`
 }
 
-func (c *Credentials) String() string {
-	return fmt.Sprintf("ConsumerKey: '%v'\nConsumerSecret:'%v'\nAccessToken: '%v'\nAccessSecret:'%v'\n",
-		c.ConsumerKey, c.ConsumerSecret, c.AccessToken, c.AccessSecret)
-}
-
-type wrapper struct {
+type methods struct {
 	Err error
 }
 
-func (w *wrapper) checkWrap(errMsg string) {
-	if w.Err != nil {
-		errors.Wrap(w.Err, errMsg)
+func (m *methods) checkWrap(errMsg string) {
+	if m.Err != nil {
+		errors.Wrap(m.Err, errMsg)
 	}
 }
 
-func (w *wrapper) getCurrentUser() *user.User {
-	if w.Err != nil {
+func (m *methods) getCurrentUser() *user.User {
+	if m.Err != nil {
 		return nil
 	}
 	usr := &user.User{}
-	usr, w.Err = user.Current()
-	w.checkWrap("getCurrentUser: error retriving user.Current()")
+	usr, m.Err = user.Current()
+	m.checkWrap("getCurrentUser: error retriving user.Current()")
 	return usr
 }
 
-func (w *wrapper) getConfigPath(usr *user.User) string {
-	if w.Err != nil {
+func (m *methods) getConfigPath(usr *user.User) string {
+	if m.Err != nil {
 		return ""
 	}
 	config := path.Join(usr.HomeDir, ".gotwitter/config.json")
-	_, w.Err = os.Stat(config)
-	w.checkWrap("getConfigPath: invald config path")
+	_, m.Err = os.Stat(config)
+	m.checkWrap("getConfigPath: invald config path")
 	return config
 }
 
-func (w *wrapper) openConfigFile(configPath string) *os.File {
-	if w.Err != nil {
+func (m *methods) openConfigFile(configPath string) *os.File {
+	if m.Err != nil {
 		return nil
 	}
 	file := &os.File{}
-	file, w.Err = os.Open(configPath)
-	w.checkWrap("openConfigFile: error reading config path")
+	file, m.Err = os.Open(configPath)
+	m.checkWrap("openConfigFile: error reading config path")
 	return file
 }
 
-func (w *wrapper) readConfig(file *os.File) *Credentials {
-	if w.Err != nil {
+func (m *methods) readConfig(file *os.File) *Credentials {
+	if m.Err != nil {
 		return nil
 	}
 	decoder := json.NewDecoder(file)
 	creds := &Credentials{}
-	w.Err = decoder.Decode(&creds)
-	w.checkWrap("readConfig: error in decoder.Decode(&creds)")
+	m.Err = decoder.Decode(&creds)
+	m.checkWrap("readConfig: error in decoder.Decode(&creds)")
 	return creds
 }
 
-func (w *wrapper) checkForErrors() {
-	if w.Err != nil {
-		fmt.Printf("%+v", w.Err)
+func (m *methods) getTwitterAPI(creds *Credentials) *anaconda.TwitterApi {
+	if m.Err != nil {
+		return nil
 	}
+	anaconda.SetConsumerKey(creds.ConsumerKey)
+	anaconda.SetConsumerSecret(creds.ConsumerSecret)
+	api := anaconda.NewTwitterApi(creds.AccessToken, creds.AccessSecret)
+	if api == nil {
+		errors.Wrap(m.Err, "getTwitterAPI: error in anaconda.NewTwitterApi(...)")
+	}
+	return api
 }
 
-func main() {
-	w := &wrapper{}
-	usr := w.getCurrentUser()
-	config := w.getConfigPath(usr)
-	file := w.openConfigFile(config)
-	creds := w.readConfig(file)
-	fmt.Println(creds)
-	w.checkForErrors()
-
-	api := getTwitterAPI(creds)
-
-	searchResult, _ := api.GetSearch("golang", nil)
+func (m *methods) searchTimeline(api anaconda.TwitterApi, key string) {
+	if m.Err != nil {
+		return
+	}
+	var searchResult anaconda.SearchResponse
+	searchResult, m.Err = api.GetSearch("golang", nil)
+	errors.Wrap(m.Err, "searchTimeline: error in api.GetSearch(...)")
 	for _, tweet := range searchResult.Statuses {
 		fmt.Println(tweet.Text)
 		fmt.Println("")
 	}
 }
 
-// func getCurrentUser() (*user.User, error) {
-// 	usr, err := user.Current()
-// 	if err != nil {
-// 		errors.Wrap(err, "error retriving user.Current()")
-// 	}
-// 	return usr, err
-// }
+func (m *methods) checkForErrors() {
+	if m.Err != nil {
+		fmt.Printf("%+v", m.Err)
+	}
+}
 
-// func openConfigFile(configPath string) (*os.File, error) {
-// 	file, err := os.Open(configPath)
-// 	if err != nil {
-// 		errors.Wrap(err, "error reading config path")
-// 	}
-// 	return file, err
-// }
-
-// func readConfig(file *os.File) (*Credentials, error) {
-// 	decoder := json.NewDecoder(file)
-// 	creds := &Credentials{}
-// 	err := decoder.Decode(&creds)
-// 	if err != nil {
-// 		errors.Wrap(err, "error in decoder.Decode(&creds)")
-// 	}
-// 	return creds, err
-// }
-
-func getTwitterAPI(creds *Credentials) *anaconda.TwitterApi {
-	anaconda.SetConsumerKey(creds.ConsumerKey)
-	anaconda.SetConsumerSecret(creds.ConsumerSecret)
-	return anaconda.NewTwitterApi(creds.AccessToken, creds.AccessSecret)
+func main() {
+	m := &methods{}
+	usr := m.getCurrentUser()
+	config := m.getConfigPath(usr)
+	file := m.openConfigFile(config)
+	creds := m.readConfig(file)
+	api := m.getTwitterAPI(creds)
+	m.searchTimeline(*api, "golang")
+	m.checkForErrors()
 }
