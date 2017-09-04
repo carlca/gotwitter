@@ -19,22 +19,19 @@ type Credentials struct {
 	AccessSecret   string `json:"accesssecret"`
 }
 
-// the methodWrapper struct provides pre and post function call wrapping
+// methodWrapper struct provides pre and post function call wrapping
 type methodWrapper struct {
-	Result interface{}
-	Err    error
+	Err error
 }
 
-func (mw *methodWrapper) do(f func() (interface{}, error)) {
-	if mw.Err != nil {
+func (m *methodWrapper) do(f func(m *methodWrapper)) {
+	if m.Err != nil {
 		return
 	}
-	result, err := f()
-	if err != nil {
-		errors.WithStack(err)
+	f(m)
+	if m.Err != nil {
+		errors.WithStack(m.Err)
 	}
-	mw.Err = err
-	mw.Result = result
 }
 
 func main() {
@@ -43,60 +40,53 @@ func main() {
 	m := &methodWrapper{}
 
 	// get the current os user
-	m.do((func() (interface{}, error) {
-		result, err := user.Current()
-		return result, err
+	var usr *user.User
+	m.do((func(m *methodWrapper) {
+		usr, m.Err = user.Current()
 	}))
 
 	// get the current users's configuration path for the gotwitter application
-	m.do((func() (interface{}, error) {
-		usr := m.Result.(*user.User)
-		configPath := path.Join(usr.HomeDir, ".gotwitter/config.json")
-		_, err := os.Stat(configPath)
-		return configPath, err
+	var config string
+	m.do((func(m *methodWrapper) {
+		config = path.Join(usr.HomeDir, ".gotwitter/config.json")
+		_, m.Err = os.Stat(config)
 	}))
 
 	// open a file based on the specified config path
-	m.do((func() (interface{}, error) {
-		config := m.Result.(string)
-		file := &os.File{}
-		file, err := os.Open(config)
-		return file, err
+	var file *os.File
+	m.do((func(m *methodWrapper) {
+		file, m.Err = os.Open(config)
 	}))
 
 	// read the config json file into the Credentials struct
-	m.do((func() (interface{}, error) {
-		file := m.Result.(*os.File)
+	var creds *Credentials
+	m.do((func(m *methodWrapper) {
 		decoder := json.NewDecoder(file)
-		creds := &Credentials{}
-		err := decoder.Decode(&creds)
-		return creds, err
+		defer file.Close()
+		m.Err = decoder.Decode(&creds)
 	}))
 
 	// get TwitterAPI based on stored credentials
-	m.do((func() (interface{}, error) {
-		creds := m.Result.(*Credentials)
+	var api *anaconda.TwitterApi
+	m.do((func(m *methodWrapper) {
 		anaconda.SetConsumerKey(creds.ConsumerKey)
 		anaconda.SetConsumerSecret(creds.ConsumerSecret)
-		api := anaconda.NewTwitterApi(creds.AccessToken, creds.AccessSecret)
-		if api == nil {
-			err := errors.New("Error creating TwitterAPI")
-			return api, err
-		}
-		return api, nil
+		api = anaconda.NewTwitterApi(creds.AccessToken, creds.AccessSecret)
+		m.Err = nil
+		// I'm thinking of adding a context field to the methodWrapper struct...
+		// err := errors.New("Error creating TwitterAPI")
 	}))
 
 	// search current Twitter timeline for golang content
-	m.do((func() (interface{}, error) {
-		api := m.Result.(*anaconda.TwitterApi)
-		searchResult, err := api.GetSearch("golang", nil)
-		if err == nil {
-			for _, tweet := range searchResult.Statuses {
+	var tweets anaconda.SearchResponse
+	m.do((func(m *methodWrapper) {
+		tweets, m.Err = api.GetSearch("golang", nil)
+		if m.Err == nil {
+			for _, tweet := range tweets.Statuses {
 				fmt.Println(tweet.Text)
 				fmt.Println("")
 			}
 		}
-		return api, err
 	}))
 
 	// final check on any errors which may have occurred
