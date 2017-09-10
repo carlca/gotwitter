@@ -26,47 +26,72 @@ func terminateOnError(err error) {
 	}
 }
 
-func main() {
-
-	var err error
-
-	// get the current os user
+// get the current os user
+func getCurrentUser() *user.User {
 	usr, err := user.Current()
 	terminateOnError(err)
+	return usr
+}
 
-	// get the current users's configuration path for the gotwitter application
-
-	var config string
-	config = path.Join(usr.HomeDir, ".gotwitter/config.json")
-	_, err = os.Stat(config)
+// get the current users's configuration path for the gotwitter application
+func getUserConfig(usr *user.User) string {
+	config := path.Join(usr.HomeDir, ".gotwitter/config.json")
+	_, err := os.Stat(config)
 	terminateOnError(err)
+	return config
+}
 
-	// open a file based on the specified config path
-	var file *os.File
-	file, err = os.Open(config)
+// open a file based on the specified config path
+func openFile(configPath string) *os.File {
+	file, err := os.Open(configPath)
 	terminateOnError(err)
-	defer file.Close()
+	return file
+}
 
-	// read the config json file into the Credentials struct
+// read the config json file into the Credentials struct
+func readCredentials(file *os.File) *Credentials {
 	var creds *Credentials
 	decoder := json.NewDecoder(file)
-	err = decoder.Decode(&creds)
+	defer file.Close()
+	err := decoder.Decode(&creds)
 	terminateOnError(err)
+	return creds
+}
 
-	// get TwitterAPI based on stored credentials
-	var api *anaconda.TwitterApi
+// get TwitterAPI based on stored credentials
+func getTwitterAPI(creds *Credentials) *anaconda.TwitterApi {
 	anaconda.SetConsumerKey(creds.ConsumerKey)
 	anaconda.SetConsumerSecret(creds.ConsumerSecret)
-	api = anaconda.NewTwitterApi(creds.AccessToken, creds.AccessSecret)
+	api := anaconda.NewTwitterApi(creds.AccessToken, creds.AccessSecret)
+	return api
 	// I'm thinking of adding a context field to the methodWrapper struct...
 	// err := errors.New("Error creating TwitterAPI")
+}
 
-	// search current Twitter timeline for golang content
-	tweets, err := api.GetSearch("golang", nil)
+// API extends the *anaconda.TwitterApi struct
+type API struct {
+	api *anaconda.TwitterApi
+}
+
+func createTwitterAPI() *API {
+	currentUser := getCurrentUser()
+	configPath := getUserConfig(currentUser)
+	configFile := openFile(configPath)
+	credentials := readCredentials(configFile)
+	twitterAPI := getTwitterAPI(credentials)
+	return &API{twitterAPI}
+}
+
+func (api *API) searchTweets(searchKey string) {
+	tweets, err := api.api.GetSearch(searchKey, nil)
 	terminateOnError(err)
-
 	for _, tweet := range tweets.Statuses {
 		fmt.Println(tweet.Text)
 		fmt.Println("")
 	}
+}
+
+func main() {
+	api := createTwitterAPI()
+	api.searchTweets("golang")
 }
