@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"os/user"
@@ -70,9 +71,10 @@ func getTwitterAPI(creds *Credentials) *anaconda.TwitterApi {
 
 // API extends the *anaconda.TwitterApi struct
 type API struct {
-	api *anaconda.TwitterApi
+	*anaconda.TwitterApi
 }
 
+// createTwitterAPI groups functions
 func createTwitterAPI() *API {
 	currentUser := getCurrentUser()
 	configPath := getUserConfig(currentUser)
@@ -83,7 +85,7 @@ func createTwitterAPI() *API {
 }
 
 func (api *API) searchTweets(searchKey string) {
-	tweets, err := api.api.GetSearch(searchKey, nil)
+	tweets, err := api.GetSearch(searchKey, nil)
 	terminateOnError(err)
 	for _, tweet := range tweets.Statuses {
 		fmt.Println(tweet.Text)
@@ -91,7 +93,23 @@ func (api *API) searchTweets(searchKey string) {
 	}
 }
 
+func (api *API) listFollowers() {
+	pages := api.GetFollowersListAll(nil)
+	for page := range pages {
+		fmt.Println(page.Followers)
+		fmt.Println("------------------------------")
+	}
+}
+
 func main() {
+	opt := flag.String("opt", "", "")
+	opt := os.Args[1]
+	param := os.Args[2]
 	api := createTwitterAPI()
-	api.searchTweets("golang")
+	switch opt {
+	case "s":
+		api.searchTweets(param)
+	case "f":
+		api.listFollowers()
+	}
 }
